@@ -5,25 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>F1vr – OpenF1 Live on Quest</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #111; color: white; font-family: system-ui, sans-serif; }
+    body { margin: 0; overflow: hidden; background: #0a0a12; color: white; font-family: system-ui, sans-serif; }
     #info {
       position: absolute; top: 12px; left: 12px; z-index: 10;
-      background: rgba(0,0,0,0.7); padding: 10px 14px; border-radius: 8px;
-      font-size: 14px; max-width: 280px;
+      background: rgba(0,0,0,0.75); padding: 12px 16px; border-radius: 10px;
+      font-size: 15px; max-width: 320px; line-height: 1.4;
     }
     #vrButton {
-      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-      z-index: 10; padding: 14px 28px; font-size: 18px; border: none;
-      border-radius: 12px; background: #e10600; color: white; cursor: pointer;
+      position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+      z-index: 10; padding: 16px 32px; font-size: 18px; border: none;
+      border-radius: 14px; background: #e10600; color: white; font-weight: bold;
+      cursor: pointer; box-shadow: 0 4px 20px rgba(225,6,0,0.4);
     }
-    #vrButton:disabled { background: #555; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <div id="info">
     <strong>F1vr – OpenF1 Live</strong><br>
-    Status: <span id="status">Starten...</span><br>
-    Drivers: <span id="driverCount">0</span>
+    Status: <span id="status">Bezig met laden...</span><br>
+    Drivers: <span id="driverCount">0</span><br>
+    Sessie: <span id="sessionName">-</span>
   </div>
   <button id="vrButton">Enter VR</button>
 
@@ -40,12 +41,12 @@
     import * as THREE from 'three';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-    // ========== SCENE SETUP ==========
+    // ===== SCENE =====
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a12);
+    scene.background = new THREE.Color(0x050510);
 
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(0, 80, 120);
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 3000);
+    camera.position.set(0, 60, 140);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -53,121 +54,93 @@
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-    // VR Button (Three.js standaard)
-    const vrButton = VRButton.createButton(renderer);
-    vrButton.style.display = 'none'; // we gebruiken onze eigen knop
-    document.body.appendChild(vrButton);
-
-    document.getElementById('vrButton').addEventListener('click', () => {
-      vrButton.click();
-    });
+    // VR knop
+    const threeVRButton = VRButton.createButton(renderer);
+    threeVRButton.style.display = 'none';
+    document.body.appendChild(threeVRButton);
+    document.getElementById('vrButton').onclick = () => threeVRButton.click();
 
     // Licht
-    const ambient = new THREE.AmbientLight(0x404060, 1.2);
-    scene.add(ambient);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    dirLight.position.set(50, 100, 50);
-    scene.add(dirLight);
+    scene.add(new THREE.AmbientLight(0x404060, 1.4));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+    dir.position.set(40, 80, 30);
+    scene.add(dir);
 
-    // Eenvoudige "track" (vlak + grid)
-    const groundGeo = new THREE.PlaneGeometry(400, 400);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    // Grond + grid
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(500, 500),
+      new THREE.MeshStandardMaterial({ color: 0x12121f, roughness: 0.85 })
+    );
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
+    scene.add(new THREE.GridHelper(500, 50, 0x2a2a4a, 0x1a1a30));
 
-    const grid = new THREE.GridHelper(400, 40, 0x333355, 0x222244);
-    scene.add(grid);
-
-    // ========== AUTO'S ==========
-    const cars = new Map(); // driver_number → mesh
+    // ===== AUTO'S =====
+    const cars = new Map();
     const teamColors = {
-      1: 0x3671C6, 11: 0x3671C6,   // Red Bull
-      16: 0xE8002D, 55: 0xE8002D,  // Ferrari
-      63: 0x27F4D2, 44: 0x27F4D2,  // Mercedes
-      4: 0xFF8000, 81: 0xFF8000,   // McLaren
-      14: 0x229971, 18: 0x229971,  // Aston
-      10: 0x00A0DE, 31: 0x00A0DE,  // Alpine
-      23: 0x64C4FF, 2: 0x64C4FF,   // Williams
-      22: 0x6692FF, 3: 0x6692FF,   // RB
-      20: 0x52E252, 5: 0x52E252,   // Sauber
-      77: 0xB6BABD, 24: 0xB6BABD   // Haas
+      1: 0x3671C6, 11: 0x3671C6, 16: 0xE8002D, 55: 0xE8002D,
+      63: 0x27F4D2, 44: 0x27F4D2, 4: 0xFF8000, 81: 0xFF8000,
+      14: 0x229971, 18: 0x229971, 10: 0x00A0DE, 31: 0x00A0DE,
+      23: 0x64C4FF, 2: 0x64C4FF, 22: 0x6692FF, 3: 0x6692FF,
+      20: 0x52E252, 5: 0x52E252, 77: 0xB6BABD, 24: 0xB6BABD
     };
 
-    function getOrCreateCar(driverNumber) {
-      if (cars.has(driverNumber)) return cars.get(driverNumber);
-
-      const geo = new THREE.SphereGeometry(1.8, 16, 16);
-      const color = teamColors[driverNumber] || 0xffffff;
-      const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.3, roughness: 0.4 });
-      const mesh = new THREE.Mesh(geo, mat);
-
-      // Nummer boven de auto
-      // (simpele versie – later canvas texture)
+    function getCar(num) {
+      if (cars.has(num)) return cars.get(num);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(2.2, 16, 16),
+        new THREE.MeshStandardMaterial({
+          color: teamColors[num] || 0xffffff,
+          metalness: 0.4,
+          roughness: 0.35
+        })
+      );
       scene.add(mesh);
-      cars.set(driverNumber, mesh);
+      cars.set(num, mesh);
       return mesh;
     }
 
-    // ========== OPENF1 ==========
+    // ===== OPENF1 =====
     const statusEl = document.getElementById('status');
     const driverCountEl = document.getElementById('driverCount');
+    const sessionNameEl = document.getElementById('sessionName');
 
-    // Schaal & offset – pas dit later aan per circuit!
-    const SCALE = 0.08;
-    const OFFSET = new THREE.Vector3(0, 1, 0);
+    let currentSessionKey = null;
+    const SCALE = 0.045;          // kleinere schaal = auto’s verder uit elkaar
+    const OFFSET = new THREE.Vector3(0, 2, 0);
 
-    function openF1ToWorld(x, y, z) {
-      // OpenF1: x,y,z – vaak y omhoog of z omhoog. We testen beide.
-      return new THREE.Vector3(x * SCALE, z * SCALE + 1.5, y * SCALE).add(OFFSET);
+    function toWorld(x, y, z) {
+      // OpenF1 coördinaten: x/y meestal horizontaal, z hoogte
+      return new THREE.Vector3(x * SCALE, (z || 0) * SCALE + 2, y * SCALE).add(OFFSET);
+    }
+
+    async function getLatestSession() {
+      try {
+        const res = await fetch('https://api.openf1.org/v1/sessions?session_key=latest');
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data && data.length > 0) {
+          currentSessionKey = data[0].session_key;
+          sessionNameEl.textContent = (data[0].session_name || '') + ' • ' + (data[0].circuit_short_name || '');
+          return currentSessionKey;
+        }
+      } catch (e) {}
+      return null;
     }
 
     async function fetchLocations() {
       try {
-        const url = 'https://api.openf1.org/v1/location?session_key=latest';
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-
-        const data = await res.json();
-        if (!Array.isArray(data) || data.length === 0) {
-          statusEl.textContent = 'Geen live data (historisch of wachten op sessie)';
+        if (!currentSessionKey) {
+          await getLatestSession();
+        }
+        if (!currentSessionKey) {
+          statusEl.textContent = 'Geen actieve sessie gevonden';
           return;
         }
 
-        // Laatste positie per driver
-        const latest = new Map();
-        for (const point of data) {
-          latest.set(point.driver_number, point);
-        }
+        // Vraag alleen recente data (laatste minuten) om 422 te voorkomen
+        const url = `https://api.openf1.org/v1/location?session_key=${currentSessionKey}`;
+        const res = await fetch(url);
 
-        for (const [num, point] of latest) {
-          const car = getOrCreateCar(num);
-          const target = openF1ToWorld(point.x, point.y, point.z);
-          car.position.lerp(target, 0.25); // smooth
-        }
-
-        driverCountEl.textContent = latest.size;
-        statusEl.textContent = 'Live • ' + new Date().toLocaleTimeString();
-      } catch (err) {
-        statusEl.textContent = 'Fout: ' + err.message;
-        console.error(err);
-      }
-    }
-
-    // Poll elke 450 ms
-    setInterval(fetchLocations, 450);
-    fetchLocations();
-
-    // ========== RESIZE & LOOP ==========
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    renderer.setAnimationLoop(() => {
-      renderer.render(scene, camera);
-    });
-  </script>
-</body>
-</html>
+        if (res.status === 422) {
+          statusEl.text
