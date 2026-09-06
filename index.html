@@ -3,19 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>F1vr – OpenF1 Live on Quest</title>
+  <title>F1vr – OpenF1 Live</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #0a0a12; color: white; font-family: system-ui, sans-serif; }
+    body { margin: 0; overflow: hidden; background: #050510; color: white; font-family: system-ui, sans-serif; }
     #info {
-      position: absolute; top: 12px; left: 12px; z-index: 10;
-      background: rgba(0,0,0,0.75); padding: 12px 16px; border-radius: 10px;
-      font-size: 15px; max-width: 320px; line-height: 1.4;
+      position: absolute; top: 12px; left: 12px; z-index: 20;
+      background: rgba(0,0,0,0.8); padding: 12px 16px; border-radius: 10px;
+      font-size: 15px; max-width: 340px; line-height: 1.45;
     }
     #vrButton {
       position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-      z-index: 10; padding: 16px 32px; font-size: 18px; border: none;
+      z-index: 20; padding: 16px 32px; font-size: 18px; border: none;
       border-radius: 14px; background: #e10600; color: white; font-weight: bold;
-      cursor: pointer; box-shadow: 0 4px 20px rgba(225,6,0,0.4);
     }
   </style>
 </head>
@@ -46,7 +45,7 @@
     scene.background = new THREE.Color(0x050510);
 
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 3000);
-    camera.position.set(0, 60, 140);
+    camera.position.set(0, 70, 160);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -54,46 +53,39 @@
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-    // VR knop
     const threeVRButton = VRButton.createButton(renderer);
     threeVRButton.style.display = 'none';
     document.body.appendChild(threeVRButton);
     document.getElementById('vrButton').onclick = () => threeVRButton.click();
 
-    // Licht
-    scene.add(new THREE.AmbientLight(0x404060, 1.4));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.6);
-    dir.position.set(40, 80, 30);
+    scene.add(new THREE.AmbientLight(0x404060, 1.5));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+    dir.position.set(50, 100, 40);
     scene.add(dir);
 
-    // Grond + grid
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(500, 500),
-      new THREE.MeshStandardMaterial({ color: 0x12121f, roughness: 0.85 })
+      new THREE.PlaneGeometry(600, 600),
+      new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.9 })
     );
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
-    scene.add(new THREE.GridHelper(500, 50, 0x2a2a4a, 0x1a1a30));
+    scene.add(new THREE.GridHelper(600, 60, 0x2a2a4a, 0x1a1a30));
 
     // ===== AUTO'S =====
     const cars = new Map();
     const teamColors = {
-      1: 0x3671C6, 11: 0x3671C6, 16: 0xE8002D, 55: 0xE8002D,
-      63: 0x27F4D2, 44: 0x27F4D2, 4: 0xFF8000, 81: 0xFF8000,
-      14: 0x229971, 18: 0x229971, 10: 0x00A0DE, 31: 0x00A0DE,
-      23: 0x64C4FF, 2: 0x64C4FF, 22: 0x6692FF, 3: 0x6692FF,
-      20: 0x52E252, 5: 0x52E252, 77: 0xB6BABD, 24: 0xB6BABD
+      1:0x3671C6,11:0x3671C6,16:0xE8002D,55:0xE8002D,
+      63:0x27F4D2,44:0x27F4D2,4:0xFF8000,81:0xFF8000,
+      14:0x229971,18:0x229971,10:0x00A0DE,31:0x00A0DE,
+      23:0x64C4FF,2:0x64C4FF,22:0x6692FF,3:0x6692FF,
+      20:0x52E252,5:0x52E252,77:0xB6BABD,24:0xB6BABD
     };
 
     function getCar(num) {
       if (cars.has(num)) return cars.get(num);
       const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(2.2, 16, 16),
-        new THREE.MeshStandardMaterial({
-          color: teamColors[num] || 0xffffff,
-          metalness: 0.4,
-          roughness: 0.35
-        })
+        new THREE.SphereGeometry(2.4, 16, 16),
+        new THREE.MeshStandardMaterial({ color: teamColors[num] || 0xffffff, metalness: 0.4, roughness: 0.3 })
       );
       scene.add(mesh);
       cars.set(num, mesh);
@@ -105,42 +97,118 @@
     const driverCountEl = document.getElementById('driverCount');
     const sessionNameEl = document.getElementById('sessionName');
 
-    let currentSessionKey = null;
-    const SCALE = 0.045;          // kleinere schaal = auto’s verder uit elkaar
-    const OFFSET = new THREE.Vector3(0, 2, 0);
+    let sessionKey = null;
+    const SCALE = 0.04;
 
     function toWorld(x, y, z) {
-      // OpenF1 coördinaten: x/y meestal horizontaal, z hoogte
-      return new THREE.Vector3(x * SCALE, (z || 0) * SCALE + 2, y * SCALE).add(OFFSET);
+      return new THREE.Vector3(x * SCALE, (z || 0) * SCALE + 2.5, y * SCALE);
     }
 
-    async function getLatestSession() {
+    async function safeFetch(url, timeout = 8000) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
       try {
-        const res = await fetch('https://api.openf1.org/v1/sessions?session_key=latest');
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (data && data.length > 0) {
-          currentSessionKey = data[0].session_key;
-          sessionNameEl.textContent = (data[0].session_name || '') + ' • ' + (data[0].circuit_short_name || '');
-          return currentSessionKey;
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(id);
+        return res;
+      } catch (e) {
+        clearTimeout(id);
+        throw e;
+      }
+    }
+
+    async function findSession() {
+      statusEl.textContent = 'Sessie zoeken...';
+      try {
+        // Eerst latest proberen
+        let res = await safeFetch('https://api.openf1.org/v1/sessions?session_key=latest');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data[0]) {
+            sessionKey = data[0].session_key;
+            sessionNameEl.textContent = (data[0].session_name || '') + ' • ' + (data[0].circuit_short_name || '');
+            return true;
+          }
         }
-      } catch (e) {}
-      return null;
+
+        // Fallback: nieuwste van 2026
+        res = await safeFetch('https://api.openf1.org/v1/sessions?year=2026');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.length > 0) {
+            // pak de laatste
+            const last = data[data.length - 1];
+            sessionKey = last.session_key;
+            sessionNameEl.textContent = (last.session_name || '') + ' • ' + (last.circuit_short_name || '');
+            return true;
+          }
+        }
+      } catch (e) {
+        statusEl.textContent = 'Netwerk fout: ' + e.message;
+        return false;
+      }
+      statusEl.textContent = 'Geen sessie gevonden';
+      return false;
     }
 
     async function fetchLocations() {
+      if (!sessionKey) {
+        const ok = await findSession();
+        if (!ok) return;
+      }
+
       try {
-        if (!currentSessionKey) {
-          await getLatestSession();
+        statusEl.textContent = 'Data ophalen...';
+        const url = `https://api.openf1.org/v1/location?session_key=${sessionKey}`;
+        const res = await safeFetch(url, 10000);
+
+        if (res.status === 422) {
+          statusEl.textContent = 'HTTP 422 – te veel data';
+          return;
         }
-        if (!currentSessionKey) {
-          statusEl.textContent = 'Geen actieve sessie gevonden';
+        if (!res.ok) {
+          statusEl.textContent = 'HTTP ' + res.status;
           return;
         }
 
-        // Vraag alleen recente data (laatste minuten) om 422 te voorkomen
-        const url = `https://api.openf1.org/v1/location?session_key=${currentSessionKey}`;
-        const res = await fetch(url);
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          statusEl.textContent = 'Geen location data';
+          return;
+        }
 
-        if (res.status === 422) {
-          statusEl.text
+        const latest = new Map();
+        for (const p of data) {
+          if (p.x !== 0 || p.y !== 0) {
+            latest.set(p.driver_number, p);
+          }
+        }
+
+        for (const [num, p] of latest) {
+          const car = getCar(num);
+          car.position.lerp(toWorld(p.x, p.y, p.z), 0.35);
+        }
+
+        driverCountEl.textContent = latest.size;
+        statusEl.textContent = 'OK • ' + new Date().toLocaleTimeString();
+      } catch (err) {
+        statusEl.textContent = 'Fout: ' + (err.name === 'AbortError' ? 'Timeout' : err.message);
+      }
+    }
+
+    // Start
+    findSession().then(() => {
+      fetchLocations();
+      setInterval(fetchLocations, 1200);
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+  </script>
+</body>
+</html>
