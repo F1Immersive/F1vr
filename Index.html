@@ -1,1 +1,174 @@
 
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>F1vr – OpenF1 Live on Quest</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; color: white; font-family: system-ui, sans-serif; }
+    #info {
+      position: absolute; top: 12px; left: 12px; z-index: 10;
+      background: rgba(0,0,0,0.7); padding: 10px 14px; border-radius: 8px;
+      font-size: 14px; max-width: 280px;
+    }
+    #vrButton {
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+      z-index: 10; padding: 14px 28px; font-size: 18px; border: none;
+      border-radius: 12px; background: #e10600; color: white; cursor: pointer;
+    }
+    #vrButton:disabled { background: #555; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <strong>F1vr – OpenF1 Live</strong><br>
+    Status: <span id="status">Starten...</span><br>
+    Drivers: <span id="driverCount">0</span>
+  </div>
+  <button id="vrButton">Enter VR</button>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+    // ========== SCENE SETUP ==========
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a12);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 80, 120);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // VR Button (Three.js standaard)
+    const vrButton = VRButton.createButton(renderer);
+    vrButton.style.display = 'none'; // we gebruiken onze eigen knop
+    document.body.appendChild(vrButton);
+
+    document.getElementById('vrButton').addEventListener('click', () => {
+      vrButton.click();
+    });
+
+    // Licht
+    const ambient = new THREE.AmbientLight(0x404060, 1.2);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(50, 100, 50);
+    scene.add(dirLight);
+
+    // Eenvoudige "track" (vlak + grid)
+    const groundGeo = new THREE.PlaneGeometry(400, 400);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(400, 40, 0x333355, 0x222244);
+    scene.add(grid);
+
+    // ========== AUTO'S ==========
+    const cars = new Map(); // driver_number → mesh
+    const teamColors = {
+      1: 0x3671C6, 11: 0x3671C6,   // Red Bull
+      16: 0xE8002D, 55: 0xE8002D,  // Ferrari
+      63: 0x27F4D2, 44: 0x27F4D2,  // Mercedes
+      4: 0xFF8000, 81: 0xFF8000,   // McLaren
+      14: 0x229971, 18: 0x229971,  // Aston
+      10: 0x00A0DE, 31: 0x00A0DE,  // Alpine
+      23: 0x64C4FF, 2: 0x64C4FF,   // Williams
+      22: 0x6692FF, 3: 0x6692FF,   // RB
+      20: 0x52E252, 5: 0x52E252,   // Sauber
+      77: 0xB6BABD, 24: 0xB6BABD   // Haas
+    };
+
+    function getOrCreateCar(driverNumber) {
+      if (cars.has(driverNumber)) return cars.get(driverNumber);
+
+      const geo = new THREE.SphereGeometry(1.8, 16, 16);
+      const color = teamColors[driverNumber] || 0xffffff;
+      const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.3, roughness: 0.4 });
+      const mesh = new THREE.Mesh(geo, mat);
+
+      // Nummer boven de auto
+      // (simpele versie – later canvas texture)
+      scene.add(mesh);
+      cars.set(driverNumber, mesh);
+      return mesh;
+    }
+
+    // ========== OPENF1 ==========
+    const statusEl = document.getElementById('status');
+    const driverCountEl = document.getElementById('driverCount');
+
+    // Schaal & offset – pas dit later aan per circuit!
+    const SCALE = 0.08;
+    const OFFSET = new THREE.Vector3(0, 1, 0);
+
+    function openF1ToWorld(x, y, z) {
+      // OpenF1: x,y,z – vaak y omhoog of z omhoog. We testen beide.
+      return new THREE.Vector3(x * SCALE, z * SCALE + 1.5, y * SCALE).add(OFFSET);
+    }
+
+    async function fetchLocations() {
+      try {
+        const url = 'https://api.openf1.org/v1/location?session_key=latest';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          statusEl.textContent = 'Geen live data (historisch of wachten op sessie)';
+          return;
+        }
+
+        // Laatste positie per driver
+        const latest = new Map();
+        for (const point of data) {
+          latest.set(point.driver_number, point);
+        }
+
+        for (const [num, point] of latest) {
+          const car = getOrCreateCar(num);
+          const target = openF1ToWorld(point.x, point.y, point.z);
+          car.position.lerp(target, 0.25); // smooth
+        }
+
+        driverCountEl.textContent = latest.size;
+        statusEl.textContent = 'Live • ' + new Date().toLocaleTimeString();
+      } catch (err) {
+        statusEl.textContent = 'Fout: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    // Poll elke 450 ms
+    setInterval(fetchLocations, 450);
+    fetchLocations();
+
+    // ========== RESIZE & LOOP ==========
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    renderer.setAnimationLoop(() => {
+      renderer.render(scene, camera);
+    });
+  </script>
+</body>
+</html>
